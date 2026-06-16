@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+backend/venv/
+.env
+backend/.env
+
+# Node
+node_modules/
+dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Logs
+*.log
+
+# Chroma
+chroma_db/
+
+# Uploads
+uploads/
+
+# Secrets
+.env.local
