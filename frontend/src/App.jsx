@@ -23,8 +23,10 @@ function App() {
 
   const [message, setMessage] = useState("");
   const [analysisTrace, setAnalysisTrace] = useState([]);
+  const [uploadMessage, setUploadMessage] = useState(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [showTrace, setShowTrace] = useState(false);
+  
 
   const fileInputRef = useRef(null);
   const chatEndRef = useRef(null);
@@ -175,9 +177,18 @@ if (!activeChatId) {
 } 
           
           else if (event.type === "error") {
-          chat.setError(event.data?.message || "Analysis failed");
-          chat.completeStreamingMessage(messageIndex);
-        } else if (event.type === "done") {
+
+  chat.updateStreamingMessage(
+    messageIndex,
+    "⚠️ Analysis failed.\n\n" +
+    (event.data?.message || "Unknown error")
+  );
+
+  chat.completeStreamingMessage(
+    messageIndex
+  );
+
+} else if (event.type === "done") {
           chat.completeStreamingMessage(messageIndex);
         }
         else if (event.type === "extraction") {
@@ -259,23 +270,46 @@ else if (event.type === "rag") {
   };
 
   const handleFileUpload = async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
 
-    try {
-      chat.setIsLoading(true);
-      chat.setError(null);
-      await APIService.uploadPDF(file);
-      event.target.value = "";
-      chat.setError(null);
-    } catch (error) {
-      chat.setError("Failed to upload PDF");
-      console.error(error);
-    } finally {
-      chat.setIsLoading(false);
-    }
-  };
+  const file = event.target.files?.[0];
 
+  if (!file) return;
+
+  try {
+
+    chat.setIsLoading(true);
+    chat.setError(null);
+
+    await APIService.uploadPDF(file);
+
+    setUploadMessage({
+      success: true,
+      filename: file.name
+    });
+
+    setTimeout(() => {
+      setUploadMessage(null);
+    }, 4000);
+
+    event.target.value = "";
+
+  } catch (error) {
+
+    setUploadMessage({
+      success: false,
+      filename: file.name
+    });
+
+    chat.setError("Failed to upload PDF");
+
+    console.error(error);
+
+  } finally {
+
+    chat.setIsLoading(false);
+
+  }
+};
   const handleDeleteChat = async (chatId) => {
     try {
       chat.setError(null);
@@ -411,6 +445,33 @@ else if (event.type === "rag") {
   </div>
 
 </div>
+
+{uploadMessage && (
+  <div className="max-w-4xl mx-auto px-6 pt-4">
+
+    <div
+      className={`rounded-xl border p-4 ${
+        uploadMessage.success
+          ? "bg-green-900/20 border-green-700"
+          : "bg-red-900/20 border-red-700"
+      }`}
+    >
+
+      <div className="font-semibold">
+        {uploadMessage.success
+          ? "✅ PDF Uploaded Successfully"
+          : "❌ Upload Failed"}
+      </div>
+
+      <div className="text-sm text-zinc-400 mt-1">
+        {uploadMessage.filename}
+      </div>
+
+    </div>
+
+  </div>
+)}
+
 
         {/* MESSAGES */}
         <div className="flex-1 overflow-y-auto">

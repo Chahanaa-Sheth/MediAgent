@@ -59,9 +59,9 @@ class RAGService:
                 expanded_query
             )
 
-            pubmed_task = self._search_pubmed(
-                expanded_query
-            )
+            pubmed_query = " ".join(retrieval_terms[:5])
+
+            pubmed_task = self._search_pubmed(pubmed_query)
 
             pinecone_task = self._search_pinecone(
                 expanded_query
@@ -72,6 +72,15 @@ class RAGService:
                 pubmed_task,
                 pinecone_task
             )
+
+            print("\n" + "="*80)
+            print("LOCAL DOCUMENTS RETRIEVED")
+            print("="*80)
+
+            for doc in local_docs:
+                print(doc)
+
+            print("="*80 + "\n")
 
             results = {
                 "local_documents": local_docs,

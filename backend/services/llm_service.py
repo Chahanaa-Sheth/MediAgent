@@ -10,7 +10,7 @@ class LLMService:
     def __init__(self):
         self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
         self.logger = Logger("LLMService")
-        self.model = "llama-3.3-70b-versatile"
+        self.model = "llama-3.1-8b-instant"
 
     async def stream_response(
         self,

@@ -20,7 +20,9 @@ class TemporalInfo(BaseModel):
 
 class MedicalContext(BaseModel):
     symptoms: List[str] = Field(default_factory=list)
-    duration: Optional[str] = None
+    from typing import Union, Dict
+
+    duration: Union[str, Dict, None] = None
     severity_indicators: List[str] = Field(default_factory=list)
     temporal_progression: Optional[str] = None
     medication_history: List[str] = Field(default_factory=list)

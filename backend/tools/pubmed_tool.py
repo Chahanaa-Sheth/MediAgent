@@ -9,7 +9,7 @@ def search_pubmed(query):
     # SEARCH PUBMED
     search_handle = Entrez.esearch(
         db="pubmed",
-        term=query,
+        term=f"({query}) AND english[Language]",
         retmax=3
     )
 
@@ -20,17 +20,13 @@ def search_pubmed(query):
     papers = []
 
     # FETCH PAPER DETAILS
-    for paper_id in ids:
+    fetch_handle = Entrez.efetch(
+    db="pubmed",
+    id=",".join(ids),
+    rettype="abstract",
+    retmode="text"
+)
 
-        fetch_handle = Entrez.efetch(
-            db="pubmed",
-            id=paper_id,
-            rettype="abstract",
-            retmode="text"
-        )
+    paper_data = fetch_handle.read()
 
-        paper_data = fetch_handle.read()
-
-        papers.append(paper_data)
-
-    return papers
+    return [paper_data]
