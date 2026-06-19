@@ -33,6 +33,17 @@ MediAgent uses specialized AI agents orchestrated through LangGraph:
 
   * Detects red-flag symptoms
   * Escalates urgent situations
+ 
+* Multi-Agent Medical Analysis
+* Differential Diagnosis Engine
+* Severity Assessment
+* Follow-up Question Generation
+* PubMed Research Retrieval
+* RAG Pipeline
+* PDF Medical Report Analysis
+* Real-Time Streaming Responses
+* Chat History & Persistence
+* JWT Authentication
 
 ---
 
