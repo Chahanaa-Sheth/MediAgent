@@ -12,7 +12,7 @@ MediAgent is an AI-powered healthcare research assistant that combines multiple 
 
 ## Medical Emergency Detection
 
-![MediAgent Demo](images/chest-pain-demo.png)
+![MediAgent Demo](chest-pain-demo.png)
 
 MediAgent can identify emergency symptoms, estimate severity, generate differential diagnoses, recommend specialists, and provide evidence-based follow-up questions.
 
@@ -98,13 +98,13 @@ MediAgent uses specialized AI agents coordinated through LangGraph orchestration
 
 # System Architecture
 
-![System Architecture](images/architecture.png)
+![System Architecture](architecture.png)
 
 ---
 
 # RAG Pipeline
 
-![RAG Pipeline](images/rag-pipeline.png)
+![RAG Pipeline](rag-pipeline.png)
 
 ---
 
@@ -151,7 +151,7 @@ Clinical Response
 
 The LangGraph orchestrator dynamically activates only the agents required for a specific medical case.
 
-![Agent Routing](images/routing.png)
+![Agent Routing](routing.png)
 
 Activated agents may include:
 
@@ -167,7 +167,7 @@ Activated agents may include:
 
 MediAgent automatically extracts clinically relevant symptoms and determines urgency levels.
 
-![Symptom Extraction](images/extraction.png)
+![Symptom Extraction](extraction.png)
 
 Features:
 
@@ -190,7 +190,7 @@ Severity levels:
 
 Users can upload laboratory reports and medical documents for automated analysis.
 
-![PDF Analysis](images/pdf-analysis.png)
+![PDF Analysis](pdf-analysis.png)
 
 Capabilities:
 
