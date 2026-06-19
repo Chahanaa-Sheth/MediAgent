@@ -3,29 +3,115 @@ import re
 from datetime import datetime
 from models.models import MedicalContext, SeverityScore, SeverityLevel, ConfidenceScore, TemporalInfo
 from utils.exceptions import Logger
-
+from services.symptom_extraction_service import (
+    extract_medical_context_llm
+)
 
 class SymptomExtractor:
     """Extract and normalize symptoms from free text"""
 
     # Common symptom mappings to standard medical terms
     SYMPTOM_MAPPINGS = {
-        "headache": ["headache", "head pain", "migraine"],
-        "fever": ["fever", "high temperature", "temp"],
-        "nausea": ["nausea", "feeling sick", "queasy"],
-        "chest_pain": ["chest pain", "chest ache", "heart pain", "cardiac pain"],
-        "difficulty_breathing": ["difficulty breathing", "shortness of breath", "SOB", "can't breathe"],
-        "cough": ["cough", "coughing"],
-        "diarrhea": ["diarrhea", "loose stools"],
-        "vomiting": ["vomiting", "throwing up", "vomit"],
-        "fatigue": ["fatigue", "tired", "exhaustion"],
-        "dizziness": ["dizziness", "dizzy", "lightheaded"],
-        "skin_rash": ["rash", "skin rash"],
-        "joint_pain": ["joint pain", "arthritis", "aching joints"],
-        "muscle_pain": ["muscle pain", "myalgia", "sore muscles"],
-        "sore_throat": ["sore throat", "throat pain"],
-        "back_pain": ["back pain", "lower back", "upper back"],
-    }
+
+    "headache": [
+        "headache",
+        "head pain",
+        "migraine"
+    ],
+
+    "fever": [
+        "fever",
+        "high temperature",
+        "temperature",
+        "temp",
+        "feverish"
+    ],
+
+    "nausea": [
+        "nausea",
+        "nauseous",
+        "queasy",
+        "feeling sick",
+        "sick to my stomach"
+    ],
+
+    "vomiting": [
+        "vomiting",
+        "vomit",
+        "throwing up",
+        "threw up"
+    ],
+
+    "cough": [
+        "cough",
+        "coughing"
+    ],
+
+    "nasal_congestion": [
+        "blocked nose",
+        "nose block",
+        "stuffy nose",
+        "nasal congestion",
+        "congested nose",
+        "blocked nostril"
+    ],
+
+    "runny_nose": [
+        "runny nose",
+        "running nose",
+        "nasal discharge"
+    ],
+
+    "common_cold": [
+        "cold",
+        "common cold"
+    ],
+
+    "sore_throat": [
+        "sore throat",
+        "throat pain"
+    ],
+
+    "difficulty_breathing": [
+        "difficulty breathing",
+        "shortness of breath",
+        "sob",
+        "cant breathe",
+        "can't breathe"
+    ],
+
+    "chest_pain": [
+        "chest pain",
+        "chest ache",
+        "heart pain"
+    ],
+
+    "fatigue": [
+        "fatigue",
+        "tired",
+        "exhaustion",
+        "weakness"
+    ],
+
+    "dizziness": [
+        "dizzy",
+        "dizziness",
+        "lightheaded"
+    ],
+
+    "diarrhea": [
+        "diarrhea",
+        "loose stool",
+        "loose stools"
+    ],
+
+    "abdominal_pain": [
+        "stomach pain",
+        "abdominal pain",
+        "belly pain",
+        "stomach ache"
+    ]
+}
 
     MEDICATIONS = [
         "ibuprofen", "aspirin", "paracetamol", "acetaminophen",
@@ -42,20 +128,27 @@ class SymptomExtractor:
         text_lower = text.lower()
 
         # Extract symptoms
-        symptoms = self._extract_symptoms(text_lower)
+        llm_result = await extract_medical_context_llm(text)
+
+        symptoms = llm_result.get("symptoms",[])
+
+        if not symptoms:
+            symptoms = self._extract_symptoms(
+        text_lower
+    )
 
         # Extract duration
-        duration = self._extract_duration(text_lower)
+        duration = llm_result.get("duration")
 
         # Extract temporal progression
-        temporal_progression = self._extract_progression(text_lower)
+        temporal_progression = llm_result.get("progression")
 
         # Extract medications
-        medications = self._extract_medications(text_lower)
+        medications = llm_result.get("medications",[])
         medications_detected = len(medications) > 0
 
         # Extract emergency flags
-        emergency_flags = self._extract_emergency_flags(text_lower)
+        emergency_flags = llm_result.get("emergency_flags",[])
 
         # Combine with history if available
         if history:
@@ -78,14 +171,16 @@ class SymptomExtractor:
             medications_detected=medications_detected
         )
 
-    def _extract_symptoms(self, text: str) -> List[str]:
-        """Extract symptoms from text"""
+    def _extract_symptoms(self,text: str) -> List[str]:
+
         symptoms = []
+
         for standard_symptom, variations in self.SYMPTOM_MAPPINGS.items():
             for variation in variations:
-                if variation in text:
+                if re.search(rf"\b{re.escape(variation)}\b",text):
                     symptoms.append(standard_symptom)
-                    break
+                break
+
         return symptoms
 
     def _extract_duration(self, text: str) -> Optional[str]:

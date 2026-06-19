@@ -1,8 +1,19 @@
 from typing import Dict, List, Any
 import asyncio
-from vectorstore.chroma_store import search_documents
+
+from services.query_expansion import expand_medical_query
+
+from vectorstore.chroma_store import (
+    search_documents,
+    collection,
+    embedding_model
+)
+
 from rag.rag_system import search_knowledge
 from tools.pubmed_tool import search_pubmed
+
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 from utils.exceptions import Logger, RAGError
 
 
@@ -12,106 +23,292 @@ class RAGService:
     def __init__(self):
         self.logger = Logger("RAGService")
 
-    async def search_all_sources(self, query: str) -> Dict[str, Any]:
-        """Search across all knowledge sources"""
+    async def search_all_sources(
+        self,
+        query: str
+    ) -> Dict[str, Any]:
+
         try:
+
+            # ==========================================
+            # QUERY EXPANSION
+            # ==========================================
+
+            expanded = await expand_medical_query(query)
+
+            retrieval_terms = expanded.get(
+                "keywords",
+                [query]
+            )
+
+            expanded_query = " OR ".join(
+                retrieval_terms[:15]
+            )
+
+            self.logger.info(
+                "Expanded query",
+                original=query,
+                expanded=expanded_query
+            )
+
+            # ==========================================
+            # PARALLEL RETRIEVAL
+            # ==========================================
+
+            local_task = self._search_local(
+                expanded_query
+            )
+
+            pubmed_task = self._search_pubmed(
+                expanded_query
+            )
+
+            pinecone_task = self._search_pinecone(
+                expanded_query
+            )
+
+            local_docs, pubmed_docs, pinecone_docs = await asyncio.gather(
+                local_task,
+                pubmed_task,
+                pinecone_task
+            )
+
             results = {
-                "local_documents": await self._search_local(query),
-                "pubmed_papers": await self._search_pubmed(query),
-                "pinecone_results": await self._search_pinecone(query)
+                "local_documents": local_docs,
+                "pubmed_papers": pubmed_docs,
+                "pinecone_results": pinecone_docs,
+                "query_expansion": {
+                    "primary_symptom": expanded.get(
+                        "primary_symptom",
+                        query
+                    ),
+                    "urgency_flag": expanded.get(
+                        "urgency_flag",
+                        "LOW"
+                    ),
+                    "retrieval_terms": retrieval_terms
+                }
             }
-            self.logger.info("RAG search completed", query_length=len(query))
+
+            self.logger.info(
+                "RAG search completed",
+                query=query,
+                expanded_terms=len(retrieval_terms),
+                local_results=len(local_docs),
+                pubmed_results=len(pubmed_docs),
+                pinecone_results=len(pinecone_docs)
+            )
+
             return results
-        except Exception as e:
-            self.logger.error("RAG search failed", error=str(e))
-            raise RAGError(f"RAG search failed: {str(e)}")
 
-    async def _search_local(self, query: str) -> List[Dict[str, Any]]:
-        """Search local Chroma vector database"""
-        try:
-            results = await asyncio.to_thread(search_documents, query)
-            return [results] if results else []
         except Exception as e:
-            self.logger.error("Local search failed", error=str(e))
+
+            self.logger.error(
+                "RAG search failed",
+                error=str(e)
+            )
+
+            raise RAGError(
+                f"RAG search failed: {str(e)}"
+            )
+
+    async def _search_local(
+        self,
+        query: str
+    ) -> List[Dict[str, Any]]:
+
+        try:
+
+            results = await asyncio.to_thread(
+                search_documents,
+                query,
+                5
+            )
+
+            if not results:
+                return []
+
+            filtered_results = [
+                result
+                for result in results
+                if result.get("score", 0) > 0.35
+            ]
+
+            return filtered_results
+
+        except Exception as e:
+
+            self.logger.error(
+                "Local search failed",
+                error=str(e)
+            )
+
             return []
 
-    async def _search_pubmed(self, query: str) -> List[Dict[str, Any]]:
-        """Search PubMed"""
+    async def _search_pubmed(
+        self,
+        query: str
+    ) -> List[Dict[str, Any]]:
+
         try:
-            results = await asyncio.to_thread(search_pubmed, query)
+
+            results = await asyncio.to_thread(
+                search_pubmed,
+                query
+            )
+
+            return results[:3] if results else []
+
+        except Exception as e:
+
+            self.logger.error(
+                "PubMed search failed",
+                error=str(e)
+            )
+
+            return []
+
+    async def _search_pinecone(
+        self,
+        query: str
+    ) -> List[Dict[str, Any]]:
+
+        try:
+
+            results = await asyncio.to_thread(
+                search_knowledge,
+                query
+            )
+
             return results if results else []
+
         except Exception as e:
-            self.logger.error("PubMed search failed", error=str(e))
+
+            self.logger.error(
+                "Pinecone search failed",
+                error=str(e)
+            )
+
             return []
 
-    async def _search_pinecone(self, query: str) -> List[Dict[str, Any]]:
-        """Search Pinecone vector database"""
-        try:
-            results = await asyncio.to_thread(search_knowledge, query)
-            return [results] if results else []
-        except Exception as e:
-            self.logger.error("Pinecone search failed", error=str(e))
-            return []
+    async def ingest_pdf(
+        self,
+        pdf_text: str,
+        filename: str
+    ) -> Dict[str, Any]:
 
-    async def ingest_pdf(self, pdf_text: str, filename: str) -> Dict[str, Any]:
-        """Ingest PDF text into Chroma"""
         try:
-            result = await asyncio.to_thread(self._ingest_pdf_sync, pdf_text, filename)
-            self.logger.info("PDF ingested", filename=filename, chunks=result.get("chunks_added", 0))
+
+            result = await asyncio.to_thread(
+                self._ingest_pdf_sync,
+                pdf_text,
+                filename
+            )
+
+            self.logger.info(
+                "PDF ingested",
+                filename=filename,
+                chunks=result["chunks_added"]
+            )
+
             return result
+
         except Exception as e:
-            self.logger.error("PDF ingestion failed", error=str(e), filename=filename)
-            raise RAGError(f"PDF ingestion failed: {str(e)}")
 
-    def _ingest_pdf_sync(self, pdf_text: str, filename: str) -> Dict[str, Any]:
-        """Synchronous PDF ingestion (run in thread)"""
-        from vectorstore.chroma_store import collection, embedding_model
+            self.logger.error(
+                "PDF ingestion failed",
+                filename=filename,
+                error=str(e)
+            )
 
-        # Chunking
-        chunks = []
-        chunk_size = 500
+            raise RAGError(
+                f"PDF ingestion failed: {str(e)}"
+            )
 
-        for i in range(0, len(pdf_text), chunk_size):
-            chunk = pdf_text[i:i + chunk_size]
-            if chunk.strip():
-                chunks.append(chunk)
+    def _ingest_pdf_sync(
+        self,
+        pdf_text: str,
+        filename: str
+    ) -> Dict[str, Any]:
 
-        # Store in Chroma
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=200,
+            separators=[
+                "\n\n",
+                "\n",
+                ". ",
+                " "
+            ]
+        )
+
+        chunks = splitter.split_text(pdf_text)
+
+        added = 0
+
         for index, chunk in enumerate(chunks):
-            embedding = embedding_model.encode(chunk).tolist()
+
+            if not chunk.strip():
+                continue
+
+            embedding = embedding_model.encode(
+                chunk
+            ).tolist()
 
             collection.add(
                 documents=[chunk],
                 embeddings=[embedding],
-                ids=[f"pdf_{filename}_{index}"]
+                ids=[f"pdf_{filename}_{index}"],
+                metadatas=[{
+                    "source": filename,
+                    "type": "pdf",
+                    "chunk_number": index
+                }]
             )
+
+            added += 1
 
         return {
             "message": "PDF ingested successfully",
-            "chunks_added": len(chunks),
-            "filename": filename
+            "filename": filename,
+            "chunks_added": added
         }
 
-    async def get_best_sources(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Get the best sources across all knowledge bases"""
+    async def get_best_sources(
+        self,
+        query: str,
+        limit: int = 5
+    ) -> List[Dict[str, Any]]:
+
         all_results = await self.search_all_sources(query)
 
-        # Combine and rank results
         combined = []
+
         for source_type, results in all_results.items():
+
+            if not isinstance(results, list):
+                continue
+
             for result in results:
+
                 if isinstance(result, dict):
+
                     combined.append({
                         **result,
                         "source": source_type
                     })
+
                 else:
+
                     combined.append({
                         "content": str(result),
-                        "source": source_type
+                        "source": source_type,
+                        "score": 0
                     })
 
-        # Sort by relevance (assuming each result has a score)
-        combined.sort(key=lambda x: x.get("score", 0), reverse=True)
+        combined.sort(
+            key=lambda x: x.get("score", 0),
+            reverse=True
+        )
 
         return combined[:limit]

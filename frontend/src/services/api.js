@@ -114,6 +114,10 @@ export class APIService {
           if (line.startsWith('data: ')) {
             try {
               const data = JSON.parse(line.slice(6));
+
+              if (data.type === "chunk") {
+                console.log("RAW CHUNK:", JSON.stringify(data.data?.content));}
+
               onEvent(data);
             } catch (e) {
               console.error('Failed to parse event:', e);
@@ -159,16 +163,36 @@ export class APIService {
   }
 
   static async login(username, password) {
-    try {
-      const response = await fetch(`${API_BASE_URL}/api/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-      return await response.json();
-    } catch (error) {
-      console.error('Login failed:', error);
-      throw error;
+
+  console.log("LOGIN REQUEST:", {
+    username,
+    password
+  });
+
+  const response = await fetch(
+    `${API_BASE_URL}/api/auth/login`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        username,
+        password
+      })
     }
+  );
+
+  const data = await response.json();
+
+  console.log("LOGIN RESPONSE:", data);
+
+  if (!response.ok) {
+    throw new Error(
+      data.detail || "Login failed"
+    );
   }
+
+  return data;
+}
 }

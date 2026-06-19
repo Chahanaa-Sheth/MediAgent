@@ -7,7 +7,16 @@ export function useLocalStorage(key, initialValue) {
   const [storedValue, setStoredValue] = useState(() => {
     try {
       const item = window.localStorage.getItem(key);
-      return item ? JSON.parse(item) : initialValue;
+
+      if (
+  item === null ||
+  item === undefined ||
+  item === "undefined"
+) {
+  return initialValue;
+}
+
+return JSON.parse(item);
     } catch (error) {
       console.error('Failed to read from localStorage:', error);
       return initialValue;
@@ -105,31 +114,61 @@ export function useChat() {
     setMessages(prev => [...prev, { role, content, timestamp: new Date(), metadata }]);
   }, []);
 
-  const addStreamingMessage = useCallback((role) => {
-    // Add a message that will be filled in by streaming
-    setMessages(prev => [...prev, { role, content: null, timestamp: new Date(), isStreaming: true }]);
-    return messages.length;
-  }, [messages.length]);
+const addStreamingMessage = useCallback((role) => {
 
-  const updateStreamingMessage = useCallback((index, content) => {
-    setMessages(prev => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index].content = (updated[index].content || '') + content;
-      }
-      return updated;
-    });
-  }, []);
+  const id = crypto.randomUUID();
 
-  const completeStreamingMessage = useCallback((index) => {
-    setMessages(prev => {
-      const updated = [...prev];
-      if (updated[index]) {
-        updated[index].isStreaming = false;
-      }
-      return updated;
+  setMessages(prev => [
+    ...prev,
+    {
+      id,
+      role,
+      content: "",
+      isStreaming: true,
+      timestamp: new Date()
+    }
+  ]);
+
+  return id;
+
+}, []);
+
+ const updateStreamingMessage = useCallback((id, content) => {
+
+  setMessages(prev => {
+
+    return prev.map(msg => {
+
+      if (msg.id !== id)
+        return msg;
+
+      return {
+        ...msg,
+        content:
+          (msg.content || "") + content
+      };
+
     });
-  }, []);
+
+  });
+
+}, []);
+
+ const completeStreamingMessage =
+useCallback((id) => {
+
+  setMessages(prev =>
+    prev.map(msg =>
+      msg.id === id
+        ? {
+            ...msg,
+            isStreaming: false
+          }
+        : msg
+    )
+  );
+
+}, []);
 
   const clearMessages = useCallback(() => {
     setMessages([]);

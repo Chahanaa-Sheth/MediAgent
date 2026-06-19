@@ -19,11 +19,11 @@ def get_chat_service() -> ChatService:
 
 
 def get_user_id_from_token(token: str = None) -> str:
-    """Extract user ID from token"""
     if not token:
-        return f"anonymous-{str(uuid4())[:8]}"
+        return "anonymous"
+
     username = get_username_from_token(token)
-    return username or f"anonymous-{str(uuid4())[:8]}"
+    return username if username else "anonymous"
 
 
 @router.post("/new")

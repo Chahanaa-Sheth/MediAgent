@@ -1,4 +1,4 @@
-from motor.motor_asyncio import AsyncClient, AsyncDatabase
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 from pymongo import ASCENDING
 from dotenv import load_dotenv
 import os
@@ -7,8 +7,8 @@ load_dotenv()
 
 MONGO_URI = os.getenv("MONGO_URI")
 
-client = AsyncClient(MONGO_URI)
-db: AsyncDatabase = client["mediagent"]
+client = AsyncIOMotorClient(MONGO_URI)
+db: AsyncIOMotorDatabase = client["mediagent"]
 
 users_collection = db["users"]
 chat_collection = db["chats"]

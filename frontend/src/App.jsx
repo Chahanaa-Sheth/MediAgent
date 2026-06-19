@@ -1,15 +1,31 @@
 import { useState, useEffect, useRef } from "react";
+import ReactMarkdown from "react-markdown";
 import { Send, Paperclip, Bot, User, Loader2, Plus, Trash2, Edit2, AlertCircle } from "lucide-react";
 import { APIService } from "./services/api";
 import { useAuth, useChat, useStream } from "./hooks";
+import AuthPage from "./components/AuthPage";
 
 function App() {
   const auth = useAuth();
   const chat = useChat();
+
+  useEffect(() => {
+
+  const savedChatId =
+    localStorage.getItem("current_chat_id");
+
+  if (savedChatId) {
+    chat.setCurrentChatId(savedChatId);
+  }
+
+}, []);
   const stream = useStream();
 
   const [message, setMessage] = useState("");
+  const [analysisTrace, setAnalysisTrace] = useState([]);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [showTrace, setShowTrace] = useState(false);
+
   const fileInputRef = useRef(null);
   const chatEndRef = useRef(null);
 
@@ -36,20 +52,65 @@ function App() {
     initApp();
   }, [auth.token]);
 
-  const createNewChat = async () => {
-    try {
-      chat.setError(null);
-      const result = await APIService.createChat(auth.token);
-      chat.setCurrentChatId(result.chat_id);
-      chat.clearMessages();
+  useEffect(() => {
 
-      const updatedChats = await APIService.getChats(auth.token);
-      chat.setChats(updatedChats.chats || []);
-    } catch (error) {
-      chat.setError("Failed to create chat");
-      console.error(error);
-    }
-  };
+  const loadCurrentChat =
+    async () => {
+
+      if (
+        !chat.currentChatId
+      ) return;
+
+      try {
+
+        const chatData =
+          await APIService.getChatHistory(
+            chat.currentChatId
+          );
+
+        chat.setMessages(
+          chatData.messages || []
+        );
+
+      } catch (err) {
+
+        console.error(err);
+
+      }
+
+    };
+
+  loadCurrentChat();
+
+}, [chat.currentChatId]);
+
+  if (!auth.token) {
+    return <AuthPage auth={auth} />;
+  }
+
+  const createNewChat = async () => {
+  try {
+    chat.setError(null);
+
+    const result = await APIService.createChat(auth.token);
+
+    chat.setCurrentChatId(result.chat_id);
+    localStorage.setItem(
+  "current_chat_id",
+  result.chat_id
+);
+    chat.clearMessages();
+    setAnalysisTrace([]);
+
+    const updatedChats = await APIService.getChats(auth.token);
+    chat.setChats(updatedChats.chats || []);
+
+    return result.chat_id;
+  } catch (error) {
+    chat.setError("Failed to create chat");
+    throw error;
+  }
+};
 
   const loadChat = async (selectedChat) => {
     try {
@@ -57,6 +118,11 @@ function App() {
       // Fetch fresh chat history from server
       const chatData = await APIService.getChatHistory(selectedChat.chat_id);
       chat.setCurrentChatId(selectedChat.chat_id);
+      localStorage.setItem(
+  "current_chat_id",
+  selectedChat.chat_id
+);
+      setAnalysisTrace([]);
       chat.setMessages(chatData.messages || []);
     } catch (error) {
       chat.setError("Failed to load chat");
@@ -66,7 +132,11 @@ function App() {
 
   const sendMessage = async () => {
     if (!message.trim()) return;
-    if (!chat.currentChatId) await createNewChat();
+    let activeChatId = chat.currentChatId;
+
+if (!activeChatId) {
+  activeChatId = await createNewChat();
+}
 
     const userMessage = message;
     setMessage("");
@@ -78,22 +148,104 @@ function App() {
     // Add streaming assistant message placeholder
     const messageIndex = chat.addStreamingMessage("assistant");
 
+    console.log("MESSAGE INDEX:", messageIndex);
+    setAnalysisTrace([]);
+
     try {
       let fullResponse = "";
       let streamedChunks = 0;
 
-      await stream.stream(userMessage, chat.currentChatId, (event) => {
+      await stream.stream(userMessage, activeChatId, (event) => {
         if (event.type === "chunk") {
-          const content = event.data?.content || "";
-          fullResponse += content;
-          chat.updateStreamingMessage(messageIndex, content);
-          streamedChunks++;
-        } else if (event.type === "error") {
+
+  const content = event.data?.content || "";
+  
+
+  console.log("CHUNK:", JSON.stringify(content));
+
+  fullResponse += content;
+
+  chat.updateStreamingMessage(
+    messageIndex,
+    content
+  );
+  
+
+  streamedChunks++;
+} 
+          
+          else if (event.type === "error") {
           chat.setError(event.data?.message || "Analysis failed");
           chat.completeStreamingMessage(messageIndex);
         } else if (event.type === "done") {
           chat.completeStreamingMessage(messageIndex);
         }
+        else if (event.type === "extraction") {
+  setAnalysisTrace(prev => [
+    ...prev,
+    {
+      type: "extraction",
+      timestamp: new Date(),
+      data: event.data
+    }
+  ]);
+}
+
+else if (event.type === "severity") {
+  setAnalysisTrace(prev => [
+    ...prev,
+    {
+      type: "severity",
+      timestamp: new Date(),
+      data: event.data
+    }
+  ]);
+}
+
+else if (event.type === "diagnosis") {
+  setAnalysisTrace(prev => [
+    ...prev,
+    {
+      type: "diagnosis",
+      timestamp: new Date(),
+      data: event.data
+    }
+  ]);
+}
+
+else if (event.type === "followup") {
+
+  setAnalysisTrace(prev => [
+    ...prev,
+    {
+      type: "followup",
+      timestamp: new Date(),
+      data: event.data
+    }
+  ]);
+}
+
+else if (event.type === "routing") {
+  setAnalysisTrace(prev => [
+    ...prev,
+    {
+      type: "routing",
+      timestamp: new Date(),
+      data: event.data
+    }
+  ]);
+}
+
+else if (event.type === "rag") {
+  setAnalysisTrace(prev => [
+    ...prev,
+    {
+      type: "rag",
+      timestamp: new Date(),
+      data: event.data
+    }
+  ]);
+}
       });
 
       // Reload chat history
@@ -217,13 +369,48 @@ function App() {
       {/* MAIN CHAT AREA */}
       <div className="flex-1 flex flex-col">
         {/* HEADER */}
-        <div className="border-b border-zinc-800 px-8 py-5 flex justify-between items-center">
-          <div>
-            <h1 className="text-3xl font-bold">MediAgent</h1>
-            <p className="text-zinc-500 text-sm">Medical Analysis Assistant</p>
-          </div>
-          {auth.username && <div className="text-zinc-400 text-sm">👤 {auth.username}</div>}
-        </div>
+        {/* HEADER */}
+<div className="border-b border-zinc-800 px-8 py-5 flex justify-between items-center">
+
+  <div>
+    <h1 className="text-3xl font-bold">
+      MediAgent
+    </h1>
+
+    <p className="text-zinc-500 text-sm">
+      Medical Analysis Assistant
+    </p>
+  </div>
+
+  <div
+    style={{
+      display: "flex",
+      alignItems: "center",
+      gap: 10
+    }}
+  >
+    <span>
+      👤 {auth.username}
+    </span>
+
+    
+
+    <button
+      onClick={() => auth.logout()}
+      style={{
+        background: "transparent",
+        border: "1px solid #444",
+        color: "white",
+        padding: "6px 12px",
+        borderRadius: 8,
+        cursor: "pointer"
+      }}
+    >
+      Logout
+    </button>
+  </div>
+
+</div>
 
         {/* MESSAGES */}
         <div className="flex-1 overflow-y-auto">
@@ -261,7 +448,42 @@ function App() {
                       </div>
                       <div className="bg-zinc-900 border border-zinc-800 rounded-2xl px-6 py-4 whitespace-pre-wrap leading-relaxed text-sm">
                         {item.content ? (
-                          <div>{item.content}</div>
+                          <ReactMarkdown
+  components={{
+    h1: ({children}) => (
+      <h1 className="text-2xl font-bold mb-3">
+        {children}
+      </h1>
+    ),
+    h2: ({children}) => (
+      <h2 className="text-xl font-semibold mt-4 mb-2">
+        {children}
+      </h2>
+    ),
+    h3: ({children}) => (
+      <h3 className="text-lg font-semibold mt-3 mb-2">
+        {children}
+      </h3>
+    ),
+    ul: ({children}) => (
+      <ul className="list-disc ml-5 space-y-1">
+        {children}
+      </ul>
+    ),
+    ol: ({children}) => (
+      <ol className="list-decimal ml-5 space-y-1">
+        {children}
+      </ol>
+    ),
+    p: ({children}) => (
+      <p className="mb-3">
+        {children}
+      </p>
+    )
+  }}
+>
+  {item.content}
+</ReactMarkdown>
                         ) : (
                           <div className="flex items-center gap-2 text-zinc-400">
                             <Loader2 size={16} className="animate-spin" />
@@ -278,6 +500,227 @@ function App() {
             <div ref={chatEndRef} />
           </div>
         </div>
+
+        {/* ANALYSIS TRACE */}
+{/* ANALYSIS TRACE */}
+
+{analysisTrace.length > 0 && (
+
+  <div className="border-t border-zinc-800 bg-zinc-950">
+
+    <button
+      onClick={() => setShowTrace(!showTrace)}
+      className="w-full p-4 flex items-center justify-between hover:bg-zinc-900 transition"
+    >
+      <h3 className="font-bold text-lg">
+        Analysis Trace ({analysisTrace.length})
+      </h3>
+
+      <span className="text-zinc-400">
+        {showTrace ? "▼" : "▶"}
+      </span>
+    </button>
+
+    {showTrace && (
+
+      <div className="p-4 max-h-96 overflow-y-auto">
+
+        {analysisTrace.map((item, index) => (
+
+          <div
+            key={index}
+            className="mb-3 p-3 bg-zinc-900 rounded-lg border border-zinc-800"
+          >
+
+            <div className="text-xs text-zinc-500">
+              {new Date(item.timestamp).toLocaleTimeString()}
+            </div>
+
+            <div className="font-semibold capitalize mb-2">
+              {item.type}
+            </div>
+
+            {item.type === "followup" ? (
+
+              <div className="mt-2 space-y-2">
+                {item.data.questions?.map((q, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-zinc-800 p-2 rounded-lg text-sm"
+                  >
+                    {idx + 1}. {q}
+                  </div>
+                ))}
+              </div>
+
+            ) : item.type === "diagnosis" ? (
+
+              <div className="space-y-3 mt-3">
+
+                {item.data.conditions?.map((condition, idx) => (
+
+                  <div
+                    key={idx}
+                    className="bg-zinc-800 rounded-xl p-3"
+                  >
+                    <div className="flex justify-between">
+                      <span className="font-medium">
+                        {condition.name}
+                      </span>
+
+                      <span className="text-blue-400">
+                        {condition.confidence}%
+                      </span>
+                    </div>
+
+                    <p className="text-sm text-zinc-400 mt-2">
+                      {condition.reasoning}
+                    </p>
+                  </div>
+
+                ))}
+
+                <div className="bg-blue-900/20 border border-blue-700 rounded-xl p-3">
+                  <div className="text-xs text-zinc-400">
+                    Recommended Specialist
+                  </div>
+
+                  <div className="font-medium mt-1">
+                    {item.data.recommended_specialist}
+                  </div>
+                </div>
+
+              </div>
+
+            ) : item.type === "extraction" ? (
+
+              <div className="space-y-3 mt-3">
+
+                <div className="bg-zinc-800 rounded-xl p-3">
+                  <div className="text-xs text-zinc-400">
+                    Symptoms Detected
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {item.data.symptoms?.map((symptom, idx) => (
+                      <span
+                        key={idx}
+                        className="bg-blue-600 px-3 py-1 rounded-full text-sm"
+                      >
+                        {symptom}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="bg-zinc-800 rounded-xl p-3">
+                  <div className="text-xs text-zinc-400">
+                    Confidence
+                  </div>
+
+                  <div className="mt-1">
+                    {(item.data.confidence * 100).toFixed(0)}%
+                  </div>
+                </div>
+
+              </div>
+
+            ) : item.type === "severity" ? (
+
+              <div className="bg-zinc-800 rounded-xl p-4 mt-3">
+
+                <div className="flex justify-between items-center">
+
+                  <span className="font-medium">
+                    Severity Score
+                  </span>
+
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm ${
+                      item.data.level === "HIGH"
+                        ? "bg-red-600"
+                        : item.data.level === "MEDIUM"
+                        ? "bg-yellow-600"
+                        : "bg-green-600"
+                    }`}
+                  >
+                    {item.data.level}
+                  </span>
+
+                </div>
+
+                <div className="mt-3 text-sm text-zinc-400">
+                  {item.data.reasoning}
+                </div>
+
+              </div>
+
+            ) : item.type === "routing" ? (
+
+              <div className="bg-zinc-800 rounded-xl p-4 mt-3">
+
+                <div className="text-sm text-zinc-400 mb-3">
+                  Agents Activated
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  {item.data.agents?.map((agent, idx) => (
+                    <span
+                      key={idx}
+                      className="bg-purple-600 px-3 py-1 rounded-full text-sm"
+                    >
+                      {agent}
+                    </span>
+                  ))}
+                </div>
+
+              </div>
+
+            ) : item.type === "rag" ? (
+
+              <div className="grid grid-cols-2 gap-3 mt-3">
+
+                <div className="bg-zinc-800 rounded-xl p-4">
+                  <div className="text-zinc-400 text-sm">
+                    PubMed Papers
+                  </div>
+
+                  <div className="text-2xl font-bold mt-2">
+                    {item.data.pubmed_papers?.length || 0}
+                  </div>
+                </div>
+
+                <div className="bg-zinc-800 rounded-xl p-4">
+                  <div className="text-zinc-400 text-sm">
+                    Local Documents
+                  </div>
+
+                  <div className="text-2xl font-bold mt-2">
+                    {item.data.local_documents?.length || 0}
+                  </div>
+                </div>
+
+              </div>
+
+            ) : (
+
+              <pre className="text-xs mt-2 whitespace-pre-wrap">
+                {JSON.stringify(item.data, null, 2)}
+              </pre>
+
+            )}
+
+          </div>
+
+        ))}
+
+      </div>
+
+    )}
+
+  </div>
+
+)}
 
         {/* INPUT */}
         <div className="border-t border-zinc-800 px-6 py-5 bg-black">

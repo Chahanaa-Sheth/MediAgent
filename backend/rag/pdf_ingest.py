@@ -1,9 +1,11 @@
 from pypdf import PdfReader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 from vectorstore.chroma_store import (
     collection,
     embedding_model
 )
+
 
 def ingest_pdf(file_path):
 
@@ -12,24 +14,26 @@ def ingest_pdf(file_path):
     full_text = ""
 
     for page in reader.pages:
-
         text = page.extract_text()
 
         if text:
             full_text += text + "\n"
 
-    # CHUNKING
-    chunks = []
+    # Better chunking
+    splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+        separators=[
+            "\n\n",
+            "\n",
+            ". ",
+            " "
+        ]
+    )
 
-    chunk_size = 500
+    chunks = splitter.split_text(full_text)
 
-    for i in range(0, len(full_text), chunk_size):
-
-        chunk = full_text[i:i + chunk_size]
-
-        chunks.append(chunk)
-
-    # STORE IN CHROMA
+    # Store in Chroma
     for index, chunk in enumerate(chunks):
 
         embedding = embedding_model.encode(
@@ -39,7 +43,12 @@ def ingest_pdf(file_path):
         collection.add(
             documents=[chunk],
             embeddings=[embedding],
-            ids=[f"pdf_chunk_{index}"]
+            ids=[f"pdf_chunk_{index}"],
+            metadatas=[{
+                "source": file_path,
+                "type": "pdf",
+                "chunk_number": index
+            }]
         )
 
     return {

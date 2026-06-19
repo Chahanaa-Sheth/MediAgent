@@ -9,7 +9,9 @@ from prompts.prompt_builder import build_user_turn
 from models.models import MedicalContext, AgentResult
 from utils.exceptions import Logger
 import json
-
+from agents.followup_agent import (
+    generate_followup_questions
+)
 
 class AnalysisService:
     """Orchestrate medical analysis pipeline"""
@@ -36,6 +38,22 @@ class AnalysisService:
             # Extract medical context
             yield self._format_event("status", {"message": "Extracting medical context..."})
             medical_context = await self.extractor.extract(symptom, history)
+
+            from agents.diagnosis_agent import (generate_differential_diagnosis)
+            yield self._format_event(
+    "status",
+    {
+        "message":
+        "Generating differential diagnosis..."
+    }
+)
+            
+            diagnosis = await generate_differential_diagnosis(symptom,medical_context)
+            yield self._format_event("diagnosis",diagnosis)
+            followups = await generate_followup_questions(symptom,medical_context,diagnosis)
+            yield self._format_event("followup",followups)
+
+            
             yield self._format_event("extraction", {
                 "symptoms": medical_context.symptoms,
                 "duration": medical_context.duration,
@@ -65,6 +83,9 @@ class AnalysisService:
             # RAG search
             yield self._format_event("status", {"message": "Searching medical knowledge..."})
             rag_results = await self.rag_service.search_all_sources(symptom)
+            # keep only top relevant results
+            rag_results["pubmed_papers"] = rag_results["pubmed_papers"][:2]
+            rag_results["local_documents"] = rag_results["local_documents"][:3]
             yield self._format_event("rag", rag_results)
 
             # Build prompt with all context
@@ -73,21 +94,86 @@ class AnalysisService:
             )
 
             # Format RAG results as a concatenated string
+                        # Format RAG results as a concatenated string
             rag_text_parts = []
+
             if rag_results.get("local_documents"):
-                rag_text_parts.append("LOCAL DOCUMENTS:\n" + "\n".join(rag_results["local_documents"]))
+
+                local_docs = []
+
+                for doc in rag_results["local_documents"]:
+
+                    if isinstance(doc, dict):
+
+                        local_docs.append(
+                            f"""
+SOURCE: {doc.get("source", "unknown")}
+RELEVANCE: {doc.get("score", 0)}
+
+{doc.get("content", "")}
+"""
+                        )
+
+                    else:
+
+                        local_docs.append(str(doc))
+
+                rag_text_parts.append(
+                    "LOCAL DOCUMENTS:\n\n"
+                    + "\n\n".join(local_docs)
+                )
+
             if rag_results.get("pubmed_papers"):
-                rag_text_parts.append("PUBMED PAPERS:\n" + "\n".join(rag_results["pubmed_papers"]))
+
+                summaries = []
+
+                for paper in rag_results["pubmed_papers"][:3]:
+
+                    summaries.append(str(paper)[:1000])
+
+                rag_text_parts.append(
+                    "PUBMED RESEARCH SUMMARIES:\n"
+                    + "\n\n".join(summaries)
+                )
+
             if rag_results.get("pinecone_results"):
-                rag_text_parts.append("PINECONE RESULTS:\n" + "\n".join(rag_results["pinecone_results"]))
 
-            rag_text = "\n\n".join(rag_text_parts) if rag_text_parts else ""
+                pinecone_docs = []
 
-            user_prompt = build_user_turn(
-                symptom=symptom,
-                rag_results=rag_text,
-                formatted_history=formatted_history
+                for doc in rag_results["pinecone_results"]:
+
+                    if isinstance(doc, dict):
+
+                        pinecone_docs.append(
+                            doc.get("content", str(doc))
+                        )
+
+                    else:
+
+                        pinecone_docs.append(str(doc))
+
+                rag_text_parts.append(
+                    "PINECONE RESULTS:\n"
+                    + "\n\n".join(pinecone_docs)
+                )
+
+            rag_text = (
+                "\n\n".join(rag_text_parts)
+                if rag_text_parts
+                else ""
             )
+       
+
+            user_prompt = build_user_turn(           
+    symptom=symptom,
+    rag_results=rag_text,
+    formatted_history=formatted_history,
+    medical_context=medical_context,
+    severity=severity_score,
+    diagnosis=diagnosis,
+    followups=followups,
+    agent_outputs=agent_outputs
+)
 
             # Stream LLM response
             yield self._format_event("status", {"message": "Generating response..."})
