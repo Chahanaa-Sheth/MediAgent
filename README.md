@@ -9,6 +9,9 @@ MediAgent is an AI-powered healthcare research assistant that combines multiple 
 ---
 
 # Demo
+## Auth Page
+
+![Auth Page](auth.png)
 
 ## Medical Emergency Detection
 
@@ -150,8 +153,6 @@ Clinical Response
 # Multi-Agent Routing
 
 The LangGraph orchestrator dynamically activates only the agents required for a specific medical case.
-
-![Agent Routing](routing.png)
 
 Activated agents may include:
 
